@@ -1,6 +1,6 @@
 '''
-The wild-type model contains native reaction pathway
-in the MCP; diffusion in the cell; diffusion from the cell 
+The tube model contains native reaction pathway
+in the MT; diffusion in the cell; diffusion from the cell 
 in the external volume.
 
 This model is currently in use. The model assumes that there 
@@ -21,9 +21,9 @@ import time
 import matplotlib.pyplot as plt
 from constants import HRS_TO_SECS, VARIABLE_INIT_NAMES, OD_TO_COUNT_CONC, MODEL_PARAMETER_LIST
 
-class WildType:
+class MTubes:
     def __init__(self, optical_density_ts, fin_exp_time, mcp_surface_area, mcp_volume,
-                 cell_surface_area, cell_volume, external_volume):
+                 ends_area, cell_surface_area, cell_volume, external_volume):
         """
         Initializes parameters to be used numerical scheme
         :param optical_density_ts: optical density at any given time during experiment (in OD)
@@ -31,6 +31,7 @@ class WildType:
         :param mcp_surface_area: surface area of cell (in metres^2)
         :param mcp_volume: volume of microcompartment (in metres^3)
         :param cell_surface_area: cell surface area (in metres^2)
+        :param ends_area: area at the ends of each tube (in metres^2)
         :param cell_volume: cell volume (in metres^3)
         :param external_volume: external volume amount (in metres^3)
         """
@@ -38,14 +39,17 @@ class WildType:
         # geometric parameters
         self.external_volume = external_volume
         self.mcp_surface_area = mcp_surface_area
+        self.ends_area = ends_area
         self.mcp_volume = mcp_volume
         self.cell_surface_area = cell_surface_area
         self.cell_volume = cell_volume
 
         # geometric ratio
         self.MCP_surf_MCP_vol_ratio = mcp_surface_area / mcp_volume 
+        self.ends_surf_MCP_vol_ratio = ends_area / mcp_volume
         self.cell_surf_cell_vol_ratio = cell_surface_area / cell_volume 
-        self.MCP_surf_cell_vol_ratio = mcp_surface_area / cell_volume 
+        self.MCP_surf_cell_vol_ratio = mcp_surface_area / cell_volume
+        self.ends_surf_cell_vol_ratio = ends_area / cell_volume
         self.cell_surf_external_vol_ratio = cell_surface_area / external_volume 
 
         # differential equation parameters
@@ -111,11 +115,11 @@ class WildType:
         R_Lf = params["VmaxLf"]*x[8]/(x[8] + params["KmLPropionyl"])
 
 
-        d[0] = -R_CDE + self.MCP_surf_MCP_vol_ratio *params['PermMCPPropanediol'] * (x[0 + n_compounds_cell] - x[0])  # microcompartment equation for G
-        d[1] =  R_CDE -  R_Pf - R_Qf + R_Pr + R_Qr +self.MCP_surf_MCP_vol_ratio * params['PermMCPPropionaldehyde']* (x[1 + n_compounds_cell] - x[1])  # microcompartment equation for H
-        d[2] = R_Qf - R_Qr + self.MCP_surf_MCP_vol_ratio * params['PermMCPPropanol'] * (x[2 + n_compounds_cell] - x[2])  # microcompartment equation for P
-        d[3] = R_Pf - R_Pr + self.MCP_surf_MCP_vol_ratio * params['PermMCPPropionyl'] * (x[3 + n_compounds_cell] - x[3])  # microcompartment equation for P
-        d[4] = self.MCP_surf_MCP_vol_ratio * params['PermMCPPropionate'] * (x[4 + n_compounds_cell] - x[4])  # microcompartment equation for P
+        d[0] = -R_CDE + self.MCP_surf_MCP_vol_ratio *params['PermMCPPropanediol'] * (x[0 + n_compounds_cell] - x[0]) + self.ends_surf_MCP_vol_ratio *params['PermEnds'] * (x[0 + n_compounds_cell] - x[0])  # microcompartment equation for G
+        d[1] =  R_CDE -  R_Pf - R_Qf + R_Pr + R_Qr + self.MCP_surf_MCP_vol_ratio * params['PermMCPPropionaldehyde']* (x[1 + n_compounds_cell] - x[1]) + self.ends_surf_MCP_vol_ratio * params['PermEnds']* (x[1 + n_compounds_cell] - x[1])  # microcompartment equation for H
+        d[2] = R_Qf - R_Qr + self.MCP_surf_MCP_vol_ratio * params['PermMCPPropanol'] * (x[2 + n_compounds_cell] - x[2]) + self.ends_surf_MCP_vol_ratio * params['PermEnds'] * (x[2 + n_compounds_cell] - x[2])  # microcompartment equation for P
+        d[3] = R_Pf - R_Pr + self.MCP_surf_MCP_vol_ratio * params['PermMCPPropionyl'] * (x[3 + n_compounds_cell] - x[3]) + self.ends_surf_MCP_vol_ratio * params['PermEnds'] * (x[3 + n_compounds_cell] - x[3])   # microcompartment equation for P
+        d[4] = self.MCP_surf_MCP_vol_ratio * params['PermMCPPropionate'] * (x[4 + n_compounds_cell] - x[4]) + self.ends_surf_MCP_vol_ratio * params['PermEnds'] * (x[4 + n_compounds_cell] - x[4])  # microcompartment equation for P
 
         ####################################################################################
         ##################################### cytosol of cell ##############################
@@ -123,19 +127,25 @@ class WildType:
 
 
         d[5] = - params['PermCellPropanediol'] * self.cell_surf_cell_vol_ratio * (x[5] - x[5 + n_compounds_cell]) \
-               - nmcps * params['PermMCPPropanediol'] * self.MCP_surf_cell_vol_ratio * (x[5] - x[5- n_compounds_cell])
+               - nmcps * params['PermMCPPropanediol'] * self.MCP_surf_cell_vol_ratio * (x[5] - x[5- n_compounds_cell]) \
+               - nmcps * params['PermEnds'] * self.ends_surf_cell_vol_ratio * (x[5] - x[5 - n_compounds_cell])
         
         d[6] = - params['PermCellPropionaldehyde'] * self.cell_surf_cell_vol_ratio * (x[6] - x[6 + n_compounds_cell]) \
-               - nmcps*params['PermMCPPropionaldehyde'] * self.MCP_surf_cell_vol_ratio * (x[6] - x[6- n_compounds_cell])
+               - nmcps*params['PermMCPPropionaldehyde'] * self.MCP_surf_cell_vol_ratio * (x[6] - x[6- n_compounds_cell]) \
+               - nmcps*params['PermEnds'] * self.ends_surf_cell_vol_ratio * (x[6] - x[6- n_compounds_cell])
         
         d[7] = - params['PermCellPropanol'] * self.cell_surf_cell_vol_ratio * (x[7] - x[7 + n_compounds_cell]) \
-               - nmcps*params['PermMCPPropanol'] * self.MCP_surf_cell_vol_ratio * (x[7] - x[7- n_compounds_cell])
+               - nmcps*params['PermMCPPropanol'] * self.MCP_surf_cell_vol_ratio * (x[7] - x[7- n_compounds_cell]) \
+               - nmcps*params['PermEnds'] * self.ends_surf_cell_vol_ratio * (x[7] - x[7- n_compounds_cell])
         
         d[8] = -R_Lf - params['PermCellPropionyl'] * self.cell_surf_cell_vol_ratio * (x[8] - x[8 + n_compounds_cell]) \
-               - nmcps*params['PermMCPPropionyl'] * self.MCP_surf_cell_vol_ratio * (x[8] - x[8- n_compounds_cell])
+               - nmcps*params['PermMCPPropionyl'] * self.MCP_surf_cell_vol_ratio * (x[8] - x[8- n_compounds_cell]) \
+               - nmcps*params['PermEnds'] * self.ends_surf_cell_vol_ratio * (x[8] - x[8- n_compounds_cell])
         
         d[9] = R_Lf - params['PermCellPropionate'] * self.cell_surf_cell_vol_ratio * (x[9] - x[9 + n_compounds_cell]) -\
-               nmcps * params['PermMCPPropionate'] * self.MCP_surf_cell_vol_ratio * (x[9] - x[9- n_compounds_cell])
+               nmcps * params['PermMCPPropionate'] * self.MCP_surf_cell_vol_ratio * (x[9] - x[9- n_compounds_cell])-\
+               nmcps * params['PermEnds'] * self.ends_surf_cell_vol_ratio * (x[9] - x[9- n_compounds_cell])
+
 
 
         #####################################################################################
